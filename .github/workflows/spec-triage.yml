@@ -1,0 +1,66 @@
+name: spec-triage
+
+# When the semantic-layer verification fails on a PR, run the spec-triage agent
+# to diagnose each failing metric and post the diagnosis as a PR comment. The
+# red `verify` gate in ci.yml stays authoritative — this only *explains* the
+# failure and proposes a fix; it never merges.
+#
+# Opt-in: it no-ops unless the repo has an ANTHROPIC_API_KEY secret. Add one in
+# Settings → Secrets → Actions to enable it.
+
+on:
+  pull_request:
+    paths:
+      - "specs/**"
+      - "specs-demo/**"
+      - "src/**"
+      - "config*.json"
+
+permissions:
+  contents: read
+  pull-requests: write
+
+jobs:
+  triage:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+
+      - name: Build
+        run: cargo build --bins
+
+      # Capture structured verify output. Keep going on failure so we can triage.
+      - name: Verify (JSON)
+        id: verify
+        continue-on-error: true
+        run: |
+          cargo run -- verify --json config.pgch.mock.json > verify.json
+          echo "exit_code=$?" >> "$GITHUB_OUTPUT"
+          failed=$(python3 -c "import json;print(json.load(open('verify.json'))['summary']['failed'])")
+          echo "failed=$failed" >> "$GITHUB_OUTPUT"
+
+      - name: Check for the API key
+        id: haskey
+        run: |
+          if [ -n "${{ secrets.ANTHROPIC_API_KEY }}" ]; then
+            echo "present=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "present=false" >> "$GITHUB_OUTPUT"
+            echo "::notice::spec-triage skipped — no ANTHROPIC_API_KEY secret set."
+          fi
+
+      # Only run the agent when metrics actually failed and a key is configured.
+      - name: Run spec-triage agent
+        if: steps.verify.outputs.failed != '0' && steps.haskey.outputs.present == 'true'
+        uses: anthropics/claude-code-action@v1
+        with:
+          anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
+          # Delegate to the project subagent defined in .claude/agents/spec-triage.md.
+          prompt: >
+            Use the spec-triage agent to triage the failing metrics in verify.json
+            (produced by `cargo run -- verify --json config.pgch.mock.json`).
+            Read verify.json and the relevant specs/*.spec.md files, then post a
+            single PR comment with the diagnosis and proposed fix for each failure.
+          claude_args: "--allowed-tools Bash,Read,Grep,Glob"

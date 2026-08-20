@@ -1,0 +1,80 @@
+{
+  "ollama": {
+    "base_url": "http://localhost:11434",
+    "model": "qwen2.5-coder",
+    "_options_comment": "Optional Ollama generation options passed to /api/chat. Defaults to {\"temperature\": 0} for reliable tool calling. Override e.g. {\"temperature\": 0.2, \"num_ctx\": 8192}.",
+    "options": { "temperature": 0 }
+  },
+
+  "mcp_server": {
+    "_comment": "crystaldba/postgres-mcp exposes execute_sql, so writes are possible and OUR guard gates them. Needs `uv` installed (https://docs.astral.sh/uv). For a read-only demo without uv, use the npx block below instead.",
+    "command": "uvx",
+    "args": ["postgres-mcp", "--access-mode", "unrestricted"],
+    "env": {
+      "DATABASE_URI": "postgresql://user:password@localhost:5432/mydb"
+    }
+  },
+
+  "_mcp_server_readonly_alternative": {
+    "command": "npx",
+    "args": ["-y", "@modelcontextprotocol/server-postgres", "postgresql://user:password@localhost:5432/mydb"],
+    "env": {}
+  },
+
+  "_mcp_servers_comment": "To connect several MCP servers at once, use `mcp_servers` (an array) instead of `mcp_server`. Each entry may set a `name` used to namespace tools when names collide (exposed as `<name>__<tool>`), and a `dialect` (\"postgres\" | \"clickhouse\") so the guard classifies that server's SQL correctly and backend-tagged specs route to it. Copy the block below to enable the Postgres + ClickHouse copilot.",
+
+  "_mcp_servers_pgch_example": [
+    {
+      "name": "pg",
+      "command": "uvx",
+      "args": ["postgres-mcp", "--access-mode", "unrestricted"],
+      "env": { "DATABASE_URI": "postgresql://user:password@localhost:5432/mydb" },
+      "dialect": "postgres"
+    },
+    {
+      "name": "ch",
+      "command": "uvx",
+      "args": ["mcp-clickhouse"],
+      "env": { "CLICKHOUSE_HOST": "localhost", "CLICKHOUSE_USER": "readonly", "CLICKHOUSE_PASSWORD": "" },
+      "dialect": "clickhouse"
+    }
+  ],
+
+
+
+  "guard": {
+    "allow_writes": true,
+    "allow_ddl": false,
+    "confirm_reads": false
+  },
+
+  "max_steps": 12,
+
+  "_specs_dir_comment": "Folder of *.spec.md semantic-layer / verified-query files. Loaded into the prompt as grounding and checked by `pg-mcp-agent verify`.",
+  "specs_dir": "specs",
+
+  "_audit_log_comment": "Optional JSONL audit log: one record per tool call (tool, args, guard decision, status). Omit to disable.",
+  "audit_log": "audit.jsonl",
+
+  "_verify_answers_comment": "Warn when a figure in the model's answer isn't found among the aggregates computable from the last result set (catches hallucinated numbers). Default true.",
+  "verify_answers": true,
+
+  "_cdc_comment": "Optional Postgres→ClickHouse CDC plan. `cdc plan` prints the direct MaterializedPostgreSQL setup DDL; `cdc plan --via kafka` prints the Debezium→Kafka→ClickHouse fan-out (needs the `fanout` block below); `cdc inspect` checks wal_level + replication slots, plus Kafka consumers when `fanout` is set. The password is read from `source.password_env` at generate time and never stored; if unset a {PASSWORD} placeholder is emitted. Empty `tables` means all tables. See docs/cdc-fanout.md.",
+  "cdc": {
+    "target_database": "analytics",
+    "source": {
+      "host": "localhost",
+      "port": 5432,
+      "database": "shop",
+      "user": "replicator",
+      "password_env": "PGPASSWORD"
+    },
+    "tables": ["orders", "order_items"],
+    "fanout": {
+      "connector_name": "shop-connector",
+      "topic_prefix": "pgch",
+      "bootstrap_servers": "localhost:9092",
+      "consumer_group": "clickhouse_analytics"
+    }
+  }
+}

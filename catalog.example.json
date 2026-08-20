@@ -1,0 +1,33 @@
+{
+  "tables": [
+    {
+      "name": "orders",
+      "description": "one row per placed order",
+      "columns": [
+        { "name": "id", "data_type": "integer", "description": "primary key" },
+        { "name": "customer_id", "data_type": "integer", "description": "FK to customers" },
+        { "name": "created_at", "data_type": "timestamptz", "description": "when the order was placed" },
+        { "name": "status", "data_type": "text", "description": "paid | refunded | pending" }
+      ],
+      "upstream": ["raw.shopify_orders"],
+      "downstream": ["mv_monthly_revenue"]
+    },
+    {
+      "name": "order_items",
+      "description": "line items; join to orders on order_id",
+      "columns": [
+        { "name": "order_id", "data_type": "integer", "description": "FK to orders.id" },
+        { "name": "product_id", "data_type": "integer", "description": "FK to products.id" },
+        { "name": "quantity", "data_type": "integer", "description": "units ordered" },
+        { "name": "unit_price", "data_type": "numeric", "description": "price per unit at order time" }
+      ],
+      "upstream": ["raw.shopify_line_items"],
+      "downstream": []
+    }
+  ],
+  "glossary": [
+    { "term": "revenue", "definition": "SUM(order_items.quantity * order_items.unit_price)" },
+    { "term": "active customer", "definition": "a customer with at least one order in the last 90 days" },
+    { "term": "AOV", "definition": "average order value: revenue divided by the count of distinct paid orders" }
+  ]
+}

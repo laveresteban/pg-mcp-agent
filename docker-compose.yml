@@ -1,0 +1,40 @@
+version: '3.8'
+
+services:
+  postgres:
+    image: postgres:latest
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: pgmcp
+      POSTGRES_PASSWORD: pgmcppass
+      POSTGRES_DB: pgmcp_db
+    ports:
+      - "5432:5432"
+    volumes:
+      - db_data:/var/lib/postgresql/data
+
+  adminer:
+    image: adminer
+    restart: unless-stopped
+    ports:
+      - "8080:8080"
+
+  mock_mcp_server:
+    build:
+      context: .
+      dockerfile: docker/mock_mcp_server/Dockerfile.dev
+    restart: unless-stopped
+    depends_on:
+      - postgres
+    volumes:
+      - ./:/usr/src/pg-mcp-agent
+    tty: true
+    healthcheck:
+      test: ["CMD-SHELL", "pgrep mock_mcp_server || exit 1"]
+      interval: 5s
+      timeout: 3s
+      retries: 12
+      start_period: 5s
+
+volumes:
+  db_data:

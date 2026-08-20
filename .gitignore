@@ -1,0 +1,6 @@
+/target
+# Local run config may hold a real DATABASE_URI / connection string.
+/config.json
+# Keep config.example.json and config.mock.json (they carry no secrets).
+# Audit logs are runtime artifacts.
+*.jsonl

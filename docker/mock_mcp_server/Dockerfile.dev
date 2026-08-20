@@ -1,0 +1,17 @@
+# Dev Dockerfile: mounts the repo and runs an entrypoint script that rebuilds on start.
+FROM rust:1.97
+
+WORKDIR /usr/src/pg-mcp-agent
+
+# Install common build deps and procps for healthcheck (pgrep)
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends pkg-config libssl-dev ca-certificates procps git \
+    && rm -rf /var/lib/apt/lists/*
+
+# Copy entrypoint into image
+COPY entrypoint.sh /usr/local/bin/entrypoint.sh
+RUN chmod +x /usr/local/bin/entrypoint.sh
+
+WORKDIR /usr/src/pg-mcp-agent
+
+ENTRYPOINT ["/usr/local/bin/entrypoint.sh"]

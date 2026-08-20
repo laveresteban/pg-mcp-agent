@@ -1,0 +1,19 @@
+[package]
+name = "pg-mcp-agent"
+version = "0.1.0"
+edition = "2021"
+description = "A Rust agent that drives a Postgres MCP server through a local Ollama model, with guarded writes."
+default-run = "pg-mcp-agent"
+
+[dependencies]
+tokio = { version = "1", features = ["macros", "rt-multi-thread", "process", "io-util", "io-std", "sync", "time"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = { version = "1", features = ["preserve_order"] }
+reqwest = { version = "0.12", features = ["json"] }
+anyhow = "1"
+# Optional heavier analytics engine (local analytical SQL over a result set).
+# Enable with: cargo build --features datafusion
+datafusion = { version = "50", optional = true }
+
+[features]
+datafusion = ["dep:datafusion"]

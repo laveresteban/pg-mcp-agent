@@ -1,0 +1,13 @@
+# Convenience aliases for common dev tasks. Run e.g. `cargo demo`, `cargo lint`.
+# These need nothing installed beyond cargo itself. See docs/development.md.
+[alias]
+# Offline Postgres + ClickHouse demo: verify the metrics against both mocks.
+demo = "run -- verify config.pgch.mock.json"
+# Same, but machine-readable JSON (what the spec-triage agent consumes).
+triage-json = "run -- verify --json config.pgch.mock.json"
+# Print the backend-aware materialized-view DDL for the demo specs.
+mat = "run -- materialize config.pgch.mock.json"
+# Print the Postgres -> ClickHouse CDC setup DDL for the demo config.
+cdc-plan = "run -- cdc plan config.pgch.mock.json"
+# Clippy with warnings treated as errors, exactly as CI runs it.
+lint = "clippy --all-targets -- -D warnings"

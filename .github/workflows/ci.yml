@@ -1,0 +1,54 @@
+name: ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  test:
+    name: build · test · lint
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust (stable, via rust-toolchain.toml)
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy, rustfmt
+
+      - name: Cache cargo
+        uses: Swatinem/rust-cache@v2
+
+      - name: Format check
+        run: cargo fmt --all --check
+
+      - name: Clippy (warnings are errors)
+        run: cargo clippy --all-targets -- -D warnings
+
+      - name: Test (default features)
+        run: cargo test
+
+      - name: Test (datafusion feature)
+        run: cargo test --features datafusion
+
+  metrics:
+    name: verify semantic-layer specs
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+
+      # The bundled mock Postgres + ClickHouse servers let `verify` run the whole
+      # semantic layer with zero external setup. Exits non-zero if a metric is
+      # wrong, so a broken spec fails the PR. Point at a live-`mcp_servers` config
+      # (with DB secrets) to gate against a real database instead.
+      - name: Build mock servers
+        run: cargo build --bins
+
+      - name: Verify metrics against mock pg + ch
+        run: cargo run -- verify config.pgch.mock.json

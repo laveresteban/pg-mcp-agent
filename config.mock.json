@@ -1,0 +1,20 @@
+{
+  "ollama": {
+    "base_url": "http://localhost:11434",
+    "model": "qwen2.5-coder"
+  },
+  "mcp_server": {
+    "command": "target/debug/mock_mcp_server.exe",
+    "args": [],
+    "env": {}
+  },
+  "guard": {
+    "allow_writes": true,
+    "allow_ddl": false,
+    "confirm_reads": false
+  },
+  "max_steps": 6,
+  "specs_dir": "specs",
+  "audit_log": "audit-mock.jsonl",
+  "verify_answers": true
+}

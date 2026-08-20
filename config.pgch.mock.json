@@ -1,0 +1,46 @@
+{
+  "ollama": {
+    "base_url": "http://localhost:11434",
+    "model": "qwen2.5-coder"
+  },
+  "mcp_servers": [
+    {
+      "name": "pg",
+      "command": "target/debug/mock_mcp_server.exe",
+      "args": [],
+      "dialect": "postgres"
+    },
+    {
+      "name": "ch",
+      "command": "target/debug/mock_ch_server.exe",
+      "args": [],
+      "dialect": "clickhouse"
+    }
+  ],
+  "guard": {
+    "allow_writes": true,
+    "allow_ddl": false,
+    "confirm_reads": false
+  },
+  "max_steps": 6,
+  "specs_dir": "specs-demo",
+  "audit_log": "audit-mock.jsonl",
+  "verify_answers": true,
+  "cdc": {
+    "target_database": "analytics",
+    "source": {
+      "host": "localhost",
+      "port": 5432,
+      "database": "shop",
+      "user": "replicator",
+      "password_env": "PGPASSWORD"
+    },
+    "tables": ["orders", "order_items"],
+    "fanout": {
+      "connector_name": "shop-connector",
+      "topic_prefix": "pgch",
+      "bootstrap_servers": "localhost:9092",
+      "consumer_group": "clickhouse_analytics"
+    }
+  }
+}
