@@ -26,11 +26,17 @@ const KAFKA_CONSUMER_ROWS: &str = r#"[
   {"table":"order_items_queue","consumer_id":"ch-2","is_currently_used":true,"last_exception":"","num_messages_read":41988}
 ]"#;
 
+/// Total revenue from the ClickHouse rollup, for the cross-engine parity demo:
+/// 1200 + 1550 + 1830 = 4580, which must equal the Postgres source total.
+const PARITY_ROWS: &str = r#"[{"revenue_total":4580}]"#;
+
 /// Pick canned rows based on the SQL so the CDC fan-out demo works offline.
 fn rows_for_sql(sql: &str) -> &'static str {
     let s = sql.to_lowercase();
     if s.contains("kafka_consumers") || s.contains("system.kafka") {
         KAFKA_CONSUMER_ROWS
+    } else if s.contains("revenue_total") {
+        PARITY_ROWS
     } else {
         CANNED_ROWS
     }

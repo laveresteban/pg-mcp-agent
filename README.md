@@ -12,6 +12,10 @@ judgment.
 > spins up a mock Postgres **and** a mock ClickHouse server and verifies a
 > metric against each. See [the zero-setup demo](#postgres--clickhouse-copilot-zero-setup).
 
+<p align="center">
+  <img src="docs/assets/demo.svg" alt="pg-mcp-agent verifies four metrics across mock Postgres and ClickHouse, then proves total revenue computes to the same number on both engines — all offline, no LLM needed" width="680">
+</p>
+
 The agent is the **control plane** — it authors and validates SQL; the databases
 run the data plane. Postgres is the row-oriented source of truth; ClickHouse is
 the columnar engine for big aggregations and time-series rollups.
@@ -19,8 +23,10 @@ the columnar engine for big aggregations and time-series rollups.
 📐 **[Architecture](docs/architecture.md)** (diagrams) · 📖 **[Tutorial](docs/tutorial.md)**
 (zero-setup, worked examples) · 🛠 **[Developer guide](docs/development.md)** ·
 🧭 **[Product strategy](docs/product-strategy.md)** ·
+🔒 **[Security model](docs/security-model.md)** ·
 🔌 **[ClickHouse integration](docs/clickhouse-integration.md)** ·
-🤖 **[CI/CD agents](docs/cicd-agents.md)**
+🤖 **[CI/CD agents](docs/cicd-agents.md)** ·
+📈 **[Market research 2026](docs/market-research-2026.md)**
 
 **New here?** `cargo build && cargo demo` runs the whole Postgres + ClickHouse
 loop offline in ~30 seconds. Then read the [tutorial](docs/tutorial.md).
@@ -57,6 +63,70 @@ call is classified in its own server's dialect, so a ClickHouse `ALTER TABLE …
 DELETE` is gated as a *write* (a row mutation), not blocked as Postgres DDL, while
 `OPTIMIZE` is treated as maintenance. The router tags each server's dialect from
 config (`dialect: "clickhouse"`, or inferred from the name/command).
+
+## Safe by construction
+
+MCP adoption is racing ahead of MCP security — most public MCP servers ship with
+exploitable risk and no real access-control model. pg-mcp-agent is built so no
+security decision is left to the model's judgment: **the model proposes,
+deterministic code disposes.**
+
+- **Deterministic SQL gate** (above) — classifies the statement, not the tool name.
+- **Anti-smuggling** — strips comments and rejects multi-statement input.
+- **Tool output is data, not instructions** — the system prompt forbids acting on
+  commands embedded in query rows/values (prompt-injection defense); the SQL gate
+  is the deterministic backstop even if that fails.
+- **Append-only audit log** — every call, its arguments, the guard decision, and
+  the outcome, as JSONL (`audit_log`).
+- **Answer verifier** — re-derives figures from the rows and flags hallucinated
+  numbers; the semantic layer's `verify` tests metrics against the live DB.
+- **Least privilege + local LLM** — run against a read-mostly role; data never
+  leaves your network.
+
+Full threat model and code mapping: **[docs/security-model.md](docs/security-model.md)**.
+
+## Cross-engine parity — prove the rollup equals the source
+
+The reason teams distrust their numbers is that the same metric disagrees between
+tools, and the Postgres → ClickHouse split makes it worse: is the ClickHouse
+rollup still equal to the Postgres source of truth? A CDC pipe (ClickPipes, your
+own replication) moves the rows but never *proves* that.
+
+pg-mcp-agent does. Define a metric once on each engine and tag both with the same
+`Parity:` key:
+
+````markdown
+## Metric: total revenue (Postgres source)
+Backend: postgres
+Parity: total revenue
+```sql
+SELECT SUM(quantity * unit_price) AS revenue_total FROM order_items;
+```
+
+## Metric: total revenue (ClickHouse rollup)
+Backend: clickhouse
+Parity: total revenue
+```sql
+SELECT sum(quantity * unit_price) AS revenue_total FROM order_items;
+```
+````
+
+Then cross-check them — offline, against the bundled mocks:
+
+```
+$ pg-mcp-agent parity config.pgch.mock.json
+Checking 1 parity group(s)
+
+  MATCH  total revenue  (postgres 4580 == clickhouse 4580)
+
+1 matched, 0 differed
+```
+
+Each side runs on its own engine (routed by dialect), a scalar is extracted from
+each result, and the group passes only if they agree within tolerance. It exits
+non-zero on a mismatch, so it gates in CI next to `verify`. This is the check that
+only exists because the semantic layer spans **both** engines at once — see
+**[docs/cross-engine-parity.md](docs/cross-engine-parity.md)**.
 
 ## Prerequisites
 

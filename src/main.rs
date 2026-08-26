@@ -39,6 +39,7 @@ async fn main() -> Result<()> {
 
     match cli.mode {
         Mode::Verify => run_verify(cfg, specs, cli.json).await,
+        Mode::Parity => run_parity(cfg, specs).await,
         Mode::InitSpecs => run_init_specs(cfg).await,
         Mode::Materialize => run_materialize(specs),
         Mode::Cdc(CdcAction::Plan(via)) => run_cdc_plan(cfg, via),
@@ -159,6 +160,7 @@ const USAGE: &str = "\
 Usage:
   pg-mcp-agent [options] [config.json]      interactive REPL (default config.json)
   pg-mcp-agent verify [config.json]         run specs against the database
+  pg-mcp-agent parity [config.json]         cross-check `Parity:` metrics agree across engines
   pg-mcp-agent init-specs [config.json]     generate a starter spec from the schema
   pg-mcp-agent materialize [config.json]    print CREATE MATERIALIZED VIEW DDL from specs
   pg-mcp-agent cdc plan [--via materialized|kafka] [config.json]
@@ -178,6 +180,7 @@ Options:
 enum Mode {
     Repl,
     Verify,
+    Parity,
     InitSpecs,
     Materialize,
     Cdc(CdcAction),
@@ -230,6 +233,7 @@ impl Cli {
         while let Some(arg) = it.next() {
             match arg.as_str() {
                 "verify" => mode = Mode::Verify,
+                "parity" => mode = Mode::Parity,
                 "init-specs" => mode = Mode::InitSpecs,
                 "materialize" => mode = Mode::Materialize,
                 "cdc" => {
@@ -334,6 +338,36 @@ async fn run_verify(cfg: Config, specs: SemanticLayer, json: bool) -> Result<()>
     } else {
         print!("{}", report.to_human());
     }
+    if report.failures() > 0 {
+        std::process::exit(1);
+    }
+    Ok(())
+}
+
+/// Cross-engine parity: run every `Parity:`-tagged spec on its backend and
+/// assert the members of each group compute to the same number. Exits non-zero
+/// on any mismatch so it gates in CI, like `verify`.
+async fn run_parity(cfg: Config, specs: SemanticLayer) -> Result<()> {
+    use pg_mcp_agent::parity::DEFAULT_TOLERANCE;
+
+    let n = specs
+        .specs
+        .iter()
+        .filter(|s| s.parity_key.is_some())
+        .count();
+    if n == 0 {
+        println!(
+            "No parity groups in `{}`. Add a `Parity: <key>` line to two specs on \
+             different backends (e.g. one Postgres, one ClickHouse) to cross-check them.",
+            cfg.specs_dir
+        );
+        return Ok(());
+    }
+    let mut router = McpRouter::connect(&cfg.servers()?).await?;
+    let report = specs.verify_parity(&mut router, DEFAULT_TOLERANCE).await?;
+    router.shutdown().await;
+
+    print!("{}", report.to_human());
     if report.failures() > 0 {
         std::process::exit(1);
     }

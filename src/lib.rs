@@ -16,6 +16,7 @@ pub mod guard;
 pub mod knowledge;
 pub mod mcp;
 pub mod ollama;
+pub mod parity;
 pub mod pipeline;
 pub mod router;
 pub mod semantics;

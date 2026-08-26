@@ -29,6 +29,10 @@ const SLOT_ROWS: &str = r#"[
   {"slot_name":"clickhouse_analytics","plugin":"pgoutput","slot_type":"logical","active":true,"lag_bytes":8192}
 ]"#;
 
+/// Total revenue as the Postgres source of truth reports it, for the
+/// cross-engine parity demo. Must equal the ClickHouse mock's parity total.
+const PARITY_ROWS: &str = r#"[{"revenue_total":4580}]"#;
+
 /// Pick canned rows based on the SQL so the CDC-inspect demo works offline.
 fn rows_for_sql(sql: &str) -> &'static str {
     let s = sql.to_lowercase();
@@ -36,6 +40,8 @@ fn rows_for_sql(sql: &str) -> &'static str {
         WAL_LEVEL_ROWS
     } else if s.contains("pg_replication_slots") {
         SLOT_ROWS
+    } else if s.contains("revenue_total") {
+        PARITY_ROWS
     } else {
         CANNED_ROWS
     }

@@ -1,0 +1,29 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="674" height="354" viewBox="0 0 674 354" font-family="ui-monospace,SFMono-Regular,Consolas,monospace">
+<rect x="0" y="0" width="674" height="354" rx="8" fill="#0d1117"/>
+<rect x="0" y="0" width="674" height="30" rx="8" fill="#161b22"/>
+<rect x="0" y="22" width="674" height="8" fill="#161b22"/>
+<circle cx="18" cy="15.0" r="6" fill="#ff5f56"/>
+<circle cx="38" cy="15.0" r="6" fill="#ffbd2e"/>
+<circle cx="58" cy="15.0" r="6" fill="#27c93f"/>
+<text x="337.0" y="19.0" fill="#8b949e" font-size="12" text-anchor="middle">pg-mcp-agent — 60s demo</text>
+<g opacity="0"><animate attributeName="opacity" values="0;0;1;1" keyTimes="0;0.0000;0.0219;1" dur="16.0s" repeatCount="indefinite"/>
+<text x="18" y="65" fill="#58a6ff" font-size="15" xml:space="preserve">$ pg-mcp-agent verify config.pgch.mock.json</text>
+</g>
+<g opacity="0"><animate attributeName="opacity" values="0;0;1;1" keyTimes="0;0.2031;0.2250;1" dur="16.0s" repeatCount="indefinite"/>
+<text x="18" y="86" fill="#8b949e" font-size="15" xml:space="preserve">Verifying 4 spec(s)</text>
+<text x="18" y="107" fill="#3fb950" font-size="15" xml:space="preserve">  PASS  sales by region (Postgres)</text>
+<text x="18" y="128" fill="#3fb950" font-size="15" xml:space="preserve">  PASS  daily revenue rollup (ClickHouse)</text>
+<text x="18" y="149" fill="#3fb950" font-size="15" xml:space="preserve">  PASS  total revenue (Postgres source)</text>
+<text x="18" y="170" fill="#3fb950" font-size="15" xml:space="preserve">  PASS  total revenue (ClickHouse rollup)</text>
+<text x="18" y="191" fill="#3fb950" font-size="15" xml:space="preserve">4 passed, 0 failed</text>
+</g>
+<g opacity="0"><animate attributeName="opacity" values="0;0;1;1" keyTimes="0;0.4062;0.4281;1" dur="16.0s" repeatCount="indefinite"/>
+<text x="18" y="233" fill="#58a6ff" font-size="15" xml:space="preserve">$ pg-mcp-agent parity config.pgch.mock.json</text>
+</g>
+<g opacity="0"><animate attributeName="opacity" values="0;0;1;1" keyTimes="0;0.6094;0.6312;1" dur="16.0s" repeatCount="indefinite"/>
+<text x="18" y="254" fill="#8b949e" font-size="15" xml:space="preserve">Checking 1 parity group(s)</text>
+<text x="18" y="275" fill="#3fb950" font-size="15" xml:space="preserve">  MATCH  total revenue  (postgres 4580 == clickhouse 4580)</text>
+<text x="18" y="296" fill="#3fb950" font-size="15" xml:space="preserve">1 matched, 0 differed</text>
+</g>
+<text x="18" y="325" fill="#d29922" font-size="12" xml:space="preserve">→ one metric, proven equal on Postgres + ClickHouse  ·  offline, no LLM needed</text>
+</svg>

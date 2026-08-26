@@ -106,6 +106,9 @@ pub struct QuerySpec {
     pub engine: Option<String>,
     /// ClickHouse only: the `ORDER BY` sorting key for the MV's storage.
     pub order_by: Option<String>,
+    /// If set, this spec joins a cross-engine parity group with this key: every
+    /// spec sharing the key must compute to the same scalar. See `parity`.
+    pub parity_key: Option<String>,
 }
 
 #[derive(Debug, Default, Clone)]
@@ -203,6 +206,61 @@ impl SemanticLayer {
             });
         }
         Ok(report)
+    }
+
+    /// Cross-engine parity: group specs by their `Parity:` key, run each on the
+    /// server matching its backend, extract a scalar, and check every member of
+    /// a group agrees within tolerance. This is the check a CDC pipe can't give
+    /// you — proof that the ClickHouse rollup still equals the Postgres source.
+    pub async fn verify_parity(
+        &self,
+        router: &mut McpRouter,
+        tolerance: f64,
+    ) -> Result<crate::parity::ParityReport> {
+        use crate::parity::{ParityGroup, ParityMember, ParityReport};
+
+        // Preserve first-seen order of keys so output is stable.
+        let mut order: Vec<String> = Vec::new();
+        let mut groups: std::collections::HashMap<String, Vec<ParityMember>> =
+            std::collections::HashMap::new();
+
+        for spec in &self.specs {
+            let Some(key) = &spec.parity_key else {
+                continue;
+            };
+            if !groups.contains_key(key) {
+                order.push(key.clone());
+            }
+            let (tool_name, schema) = match router.sql_tool_for_dialect(spec.backend.into()) {
+                Some(t) => t,
+                None => anyhow::bail!(
+                    "no SQL tool for backend {} (parity spec `{}`)",
+                    spec.backend.as_str(),
+                    spec.name
+                ),
+            };
+            let args = fill_sql_arg(&schema, &spec.sql);
+            let outcome = router.call_tool(&tool_name, args).await;
+            let (value, excerpt) = match &outcome {
+                Ok(text) => (crate::parity::extract_number(text), excerpt(text)),
+                Err(e) => (None, format!("error: {e}")),
+            };
+            groups.entry(key.clone()).or_default().push(ParityMember {
+                name: spec.name.clone(),
+                backend: spec.backend.as_str().to_string(),
+                value,
+                excerpt,
+            });
+        }
+
+        let report_groups = order
+            .into_iter()
+            .map(|key| {
+                let members = groups.remove(&key).unwrap_or_default();
+                ParityGroup { key, members }
+            })
+            .collect();
+        Ok(ParityReport::new(report_groups, tolerance))
     }
 }
 
@@ -439,6 +497,7 @@ fn parse(text: &str) -> SemanticLayer {
                     backend: Backend::default(),
                     engine: None,
                     order_by: None,
+                    parity_key: None,
                 });
             } else {
                 in_glossary = false;
@@ -481,6 +540,11 @@ fn parse(text: &str) -> SemanticLayer {
                 .or_else(|| trimmed.strip_prefix("Order:"))
             {
                 spec.order_by = Some(ob.trim().to_string());
+            } else if let Some(pk) = trimmed
+                .strip_prefix("Parity:")
+                .or_else(|| trimmed.strip_prefix("parity:"))
+            {
+                spec.parity_key = Some(pk.trim().to_string());
             }
         }
     }

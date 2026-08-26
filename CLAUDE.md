@@ -46,6 +46,7 @@ $CARGO build --release
 # Run the agent
 $CARGO run -- [config.json]                 # interactive REPL
 $CARGO run -- verify [config.json]          # run specs against the DB (CI-friendly, exit-nonzero on failure)
+$CARGO run -- parity [config.json]          # cross-check Parity: metrics agree across engines (exit-nonzero on mismatch)
 $CARGO run -- init-specs [config.json]      # generate specs/generated.spec.md from information_schema
 $CARGO run -- --yes                         # auto-approve guarded writes (non-interactive)
 $CARGO run -- --prompt "revenue by month"   # one-shot: run a single request and exit (implies --yes)
@@ -67,6 +68,7 @@ CLI flags live in `Cli::parse` in [src/main.rs](src/main.rs): `-y/--yes`,
 | [src/verify.rs](src/verify.rs) | Answer verifier: recomputes aggregates and flags hallucinated figures in the model's prose. Config `verify_answers` (default on). Unit-tested. |
 | [src/knowledge.rs](src/knowledge.rs) | Always-on analytical-Postgres cheatsheet injected into the system prompt. |
 | [src/semantics.rs](src/semantics.rs) | Parses `specs/*.spec.md` into a semantic layer (glossary + verified examples). Injects grounding; `verify` runs specs against the DB and returns a `VerifyReport` (`--json` feeds the spec-triage agent). |
+| [src/parity.rs](src/parity.rs) | Cross-engine **parity**: pure logic (`extract_number`, relative-diff match, `ParityReport`) proving a metric computes to the same scalar on Postgres and ClickHouse. `semantics::verify_parity` does the routing; `parity` CLI command runs it. Unit-tested. See [docs/cross-engine-parity.md](docs/cross-engine-parity.md). |
 | [src/analytics.rs](src/analytics.rs) | Built-in dependency-free result-set analytics (describe/group_by/top) + the `analyze_last_result` tool schema. |
 | [src/analytics_datafusion.rs](src/analytics_datafusion.rs) | Optional DataFusion engine (`op=sql`): loads the last result set into an Arrow table `t` and runs analytical SQL. Feature-gated. |
 | [src/specgen.rs](src/specgen.rs) | `init-specs`: turns an information_schema introspection result into a starter `.spec.md`. Pure `generate_spec` is unit-tested. |
