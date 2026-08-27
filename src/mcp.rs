@@ -7,6 +7,7 @@
 
 use anyhow::{anyhow, bail, Context, Result};
 use serde_json::{json, Value};
+use std::path::Path;
 use std::process::Stdio;
 use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader, Lines};
 use tokio::process::{Child, ChildStdin, ChildStdout};
@@ -29,6 +30,26 @@ pub struct McpClient {
     next_id: i64,
 }
 
+/// Resolve a server command across platforms. Configs may point at a local
+/// build artifact with (or without) a `.exe` suffix; the suffix only exists on
+/// Windows, so a config written on one OS would fail to spawn on the other.
+/// If the exact path doesn't exist, try toggling the `.exe` suffix. PATH-based
+/// commands (`uvx`, `npx`) don't exist as relative files, so they fall through
+/// unchanged.
+fn resolve_command(command: &str) -> String {
+    if Path::new(command).exists() {
+        return command.to_string();
+    }
+    let alt = match command.strip_suffix(".exe") {
+        Some(stripped) => stripped.to_string(),
+        None => format!("{command}.exe"),
+    };
+    if Path::new(&alt).exists() {
+        return alt;
+    }
+    command.to_string()
+}
+
 impl McpClient {
     /// Spawn the server process and complete the MCP initialize handshake.
     pub async fn connect(
@@ -36,7 +57,8 @@ impl McpClient {
         args: &[String],
         envs: &[(String, String)],
     ) -> Result<Self> {
-        let mut cmd = tokio::process::Command::new(command);
+        let command = resolve_command(command);
+        let mut cmd = tokio::process::Command::new(&command);
         cmd.args(args)
             .envs(envs.iter().cloned())
             .stdin(Stdio::piped())
@@ -230,6 +252,29 @@ fn extract_text(result: &Value) -> String {
 mod tests {
     use super::*;
     use serde_json::json;
+
+    #[test]
+    fn resolve_command_passes_through_pathless_commands() {
+        // PATH-based commands don't exist as relative files, so they're unchanged.
+        assert_eq!(resolve_command("uvx"), "uvx");
+        assert_eq!(resolve_command("npx"), "npx");
+    }
+
+    #[test]
+    fn resolve_command_toggles_exe_suffix_to_find_the_built_binary() {
+        // The current cargo build produces this test binary's crate binaries.
+        // Whichever suffix is right for the host, resolve_command should land on
+        // an existing file when the other suffix is given.
+        let base = "target/debug/mock_mcp_server";
+        let with_exe = format!("{base}.exe");
+        let resolved_from_bare = resolve_command(base);
+        let resolved_from_exe = resolve_command(&with_exe);
+        // At least one form exists after a build; both inputs resolve to it.
+        if Path::new(base).exists() || Path::new(&with_exe).exists() {
+            assert!(Path::new(&resolved_from_bare).exists());
+            assert!(Path::new(&resolved_from_exe).exists());
+        }
+    }
 
     #[test]
     fn extract_text_returns_full_json_when_no_content() {

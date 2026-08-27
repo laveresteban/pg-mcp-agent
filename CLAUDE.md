@@ -144,6 +144,10 @@ CLI flags live in `Cli::parse` in [src/main.rs](src/main.rs): `-y/--yes`,
 
 ## Working norms for this repo
 
+- **After any implementation or fix, verify CI is green before committing:** run
+  the full test suite (`$CARGO test` and `$CARGO test --features datafusion`) and
+  linting (`$CARGO clippy --all-targets --all-features -- -D warnings`, plus
+  `$CARGO fmt --check`). Only once these pass, commit the changes.
 - A **second AI agent has been adding tests** here in parallel. It refactored
   `mcp.rs` (added `parse_tools_from_value`) and may add files. Use targeted edits,
   re-read before editing, and don't overwrite files you didn't write.
