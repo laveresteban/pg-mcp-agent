@@ -51,6 +51,11 @@ $CARGO run -- init-specs [config.json]      # generate specs/generated.spec.md f
 $CARGO run -- --yes                         # auto-approve guarded writes (non-interactive)
 $CARGO run -- --prompt "revenue by month"   # one-shot: run a single request and exit (implies --yes)
 $CARGO run --features datafusion -- ...      # enable op=sql analytical SQL
+
+# Web UI over Dockerized Pagila (see docs/ui-quickstart.md)
+docker compose up -d postgres pagila-loader  # Postgres 18 + one-time Pagila load (~13 MB)
+$CARGO run --features server --bin api_server -- config.pagila.json   # HTTP API on :7878
+cd ui && npm install && npm run dev          # React UI on :5173 (proxies /api → :7878)
 ```
 
 CLI flags live in `Cli::parse` in [src/main.rs](src/main.rs): `-y/--yes`,
@@ -78,6 +83,8 @@ CLI flags live in `Cli::parse` in [src/main.rs](src/main.rs): `-y/--yes`,
 | [src/config.rs](src/config.rs) | JSON config. |
 | [src/lib.rs](src/lib.rs) | Library surface exposing all modules (so tests + the mock server reuse them). |
 | [src/main.rs](src/main.rs) | Thin CLI over the lib: parsing, REPL, one-shot `--prompt`, `--yes`, verify. |
+| [src/bin/api_server.rs](src/bin/api_server.rs) | HTTP JSON API for the web UI (feature `server`, axum). `POST /api/ask {prompt}` runs the Ollama→guard→MCP loop and returns `{answer, steps[{sql,columns,rows,status}], flags}`. Read-only by design; serves `ui/dist` as a fallback. Run: `cargo run --features server --bin api_server -- config.pagila.json`. |
+| [ui/](ui/) | React + Vite web UI (chat box → SQL + result tables). `npm install && npm run dev` (proxies `/api` to :7878) or `npm run build` → `ui/dist`. See [docs/ui-quickstart.md](docs/ui-quickstart.md). |
 | [src/bin/mock_mcp_server.rs](src/bin/mock_mcp_server.rs) | In-memory *Postgres* MCP server (canned rows, `execute_sql`) for offline runs + integration tests. |
 | [src/bin/mock_ch_server.rs](src/bin/mock_ch_server.rs) | In-memory *ClickHouse* MCP server (canned daily rollup, `run_select_query`, dialect `clickhouse`) so the full pg+ch demo runs offline. `config.pgch.mock.json` wires both mocks. |
 | [src/catalog.rs](src/catalog.rs) + [src/bin/catalog_mcp_server.rs](src/bin/catalog_mcp_server.rs) | A data-catalog MCP server: serves tables/columns/lineage/glossary from a JSON file. `init-specs` grounds specs on it when connected (via the `catalog_dump` tool). |

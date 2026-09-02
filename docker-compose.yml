@@ -1,31 +1,76 @@
-version: '3.8'
+# Local dev stack for pg-mcp-agent.
+#
+#   docker compose up -d postgres pagila-loader   # Postgres + one-time Pagila load (downloads ~13 MB)
+#   docker compose logs -f pagila-loader          # watch the load finish
+#   docker compose up -d adminer                  # optional web DB browser at http://localhost:8080
+#   docker compose down                           # stop (keeps data in the named volume)
+#   docker compose down -v                        # stop and wipe the data volume
+#
+# The Postgres MCP server is NOT run here: the agent/API spawns it as a stdio
+# subprocess (npx @modelcontextprotocol/server-postgres), so it lives next to
+# the agent, not in a container. It connects to this DB on localhost:5433 using
+# the credentials below (see config.pagila.json).
 
 services:
   postgres:
-    image: postgres:latest
+    # Pagila's master schema uses uuidv7() (Postgres 18+) and the `vector`
+    # extension, so use the pgvector image built on Postgres 18.
+    image: pgvector/pgvector:pg18
+    container_name: pgmcp-postgres
     restart: unless-stopped
     environment:
-      POSTGRES_USER: pgmcp
-      POSTGRES_PASSWORD: pgmcppass
-      POSTGRES_DB: pgmcp_db
+      POSTGRES_USER: pagila
+      POSTGRES_PASSWORD: pagila
+      POSTGRES_DB: pagila
     ports:
-      - "5432:5432"
+      # Host 5433 → container 5432 (host 5432 is often taken by a local Postgres).
+      - "5433:5432"
     volumes:
-      - db_data:/var/lib/postgresql/data
+      # Postgres 18 images expect the mount at /var/lib/postgresql (not /data).
+      - pgdata:/var/lib/postgresql
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U pagila -d pagila"]
+      interval: 3s
+      timeout: 3s
+      retries: 20
 
+  # One-shot job: downloads the public Pagila dataset and loads it, then exits.
+  # Idempotent — re-running does nothing once the `film` table exists.
+  pagila-loader:
+    image: alpine:3.20
+    container_name: pgmcp-pagila-loader
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      POSTGRES_HOST: postgres
+      POSTGRES_USER: pagila
+      POSTGRES_PASSWORD: pagila
+      POSTGRES_DB: pagila
+    volumes:
+      - ./docker/load-pagila.sh:/load-pagila.sh:ro
+    entrypoint: ["sh", "/load-pagila.sh"]
+    restart: "no"
+
+  # Optional lightweight web UI to browse the database directly.
+  # System: PostgreSQL, Server: postgres, User/Pass/DB: pagila.
   adminer:
     image: adminer
+    container_name: pgmcp-adminer
     restart: unless-stopped
+    depends_on:
+      - postgres
     ports:
       - "8080:8080"
 
+  # Dev container that rebuilds and runs the in-memory mock MCP server (offline
+  # testing, no real DB). Kept from the existing dev setup; opt-in via profile.
   mock_mcp_server:
     build:
       context: .
       dockerfile: docker/mock_mcp_server/Dockerfile.dev
+    profiles: ["mock"]
     restart: unless-stopped
-    depends_on:
-      - postgres
     volumes:
       - ./:/usr/src/pg-mcp-agent
     tty: true
@@ -37,4 +82,5 @@ services:
       start_period: 5s
 
 volumes:
+  pgdata:
   db_data:

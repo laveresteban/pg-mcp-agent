@@ -1,0 +1,27 @@
+{
+  "_comment": "Config for the Dockerized Pagila DB (see docker-compose.yml). Uses the read-only npx Postgres MCP server so no `uv` is required. Start the DB with `docker compose up -d`, then run the agent/UI against this config.",
+
+  "ollama": {
+    "base_url": "http://localhost:11434",
+    "model": "qwen2.5-coder",
+    "options": { "temperature": 0 }
+  },
+
+  "_windows_note": "On Windows the command must be `npx.cmd` (the .cmd shim); on macOS/Linux use `npx`.",
+  "mcp_server": {
+    "command": "npx.cmd",
+    "args": ["-y", "@modelcontextprotocol/server-postgres", "postgresql://pagila:pagila@localhost:5433/pagila"],
+    "env": {}
+  },
+
+  "guard": {
+    "allow_writes": false,
+    "allow_ddl": false,
+    "confirm_reads": false
+  },
+
+  "max_steps": 12,
+  "specs_dir": "specs/pagila",
+  "audit_log": "audit.jsonl",
+  "verify_answers": true
+}
