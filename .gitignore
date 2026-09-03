@@ -4,3 +4,6 @@
 # Keep config.example.json and config.mock.json (they carry no secrets).
 # Audit logs are runtime artifacts.
 *.jsonl
+
+# Stray test-output capture from local runs.
+test_out.txt
