@@ -81,6 +81,8 @@ pub struct Agent {
     audit: AuditLogger,
     /// Warn on figures in the answer not found in the data's aggregates.
     verify_answers: bool,
+    /// Max times a failing statement may be re-derived within one turn.
+    max_repair_attempts: u32,
 }
 
 /// Behavioral knobs for an [`Agent`], separate from its wiring.
@@ -92,6 +94,9 @@ pub struct AgentOptions {
     pub audit: AuditLogger,
     /// Warn on figures in the answer not found in the data's aggregates.
     pub verify_answers: bool,
+    /// Max times a failing statement may be re-derived within one turn (the
+    /// bounded SQL-repair loop). 0 disables retries.
+    pub max_repair_attempts: u32,
 }
 
 impl Default for AgentOptions {
@@ -101,6 +106,7 @@ impl Default for AgentOptions {
             auto_yes: false,
             audit: AuditLogger::default(),
             verify_answers: true,
+            max_repair_attempts: 3,
         }
     }
 }
@@ -119,6 +125,7 @@ impl Agent {
             auto_yes,
             audit,
             verify_answers,
+            max_repair_attempts,
         } = options;
         let mcp_tools = router.tools().to_vec();
         println!(
@@ -174,6 +181,7 @@ impl Agent {
             auto_yes,
             audit,
             verify_answers,
+            max_repair_attempts,
         })
     }
 
@@ -185,6 +193,10 @@ impl Agent {
         // identical calls in a turn, we stop executing it and nudge the model.
         const MAX_REPEATS: u32 = 2;
         let mut call_counts: HashMap<String, u32> = HashMap::new();
+        // Bounded SQL-repair loop: count genuine execution failures this turn so
+        // the model gets a fixed number of rewrite attempts before we tell it to
+        // stop and report the error instead of retrying forever.
+        let mut repair_attempts: u32 = 0;
 
         for step in 0..self.max_steps {
             let assistant = self.ollama.chat(&self.messages, &self.tools).await?;
@@ -228,18 +240,30 @@ impl Agent {
                 let count = call_counts.entry(signature).or_insert(0);
                 *count += 1;
 
-                let result = if *count > MAX_REPEATS {
+                let (ok, mut result) = if *count > MAX_REPEATS {
                     println!(
                         "  ↩ repeated call to `{name}` suppressed (already ran {MAX_REPEATS}x)"
                     );
                     self.audit(&name, "suppressed", "skipped", args, "repeat-call guard");
-                    format!(
-                        "You have already called `{name}` with these exact arguments and have the \
-                         result above. Do not call it again — answer using what you already have."
+                    (
+                        true,
+                        format!(
+                            "You have already called `{name}` with these exact arguments and have \
+                             the result above. Do not call it again — answer using what you \
+                             already have."
+                        ),
                     )
                 } else {
                     self.dispatch(&name, args, console).await
                 };
+
+                // Bounded SQL-repair loop: on a genuine execution failure, append
+                // explicit guidance to rewrite (up to the cap), then tell the
+                // model to give up and report the error.
+                if !ok {
+                    repair_attempts += 1;
+                    result.push_str(&repair_guidance(repair_attempts, self.max_repair_attempts));
+                }
                 self.messages.push(Message::tool_result(&name, result));
             }
 
@@ -250,10 +274,12 @@ impl Agent {
         Ok(())
     }
 
-    /// Guard, maybe confirm, then execute a single tool call. Returns the text
-    /// to feed back to the model (tool output, or an explanation of a refusal).
-    /// Every path is recorded to the audit log.
-    async fn dispatch(&mut self, name: &str, args: Value, console: &mut Console) -> String {
+    /// Guard, maybe confirm, then execute a single tool call. Returns
+    /// `(succeeded, text-for-the-model)`; `succeeded` is `false` only for a
+    /// genuine execution/analysis error (which drives the repair loop), not for
+    /// a policy no-op like a blocked or declined statement. Every path is
+    /// recorded to the audit log.
+    async fn dispatch(&mut self, name: &str, args: Value, console: &mut Console) -> (bool, String) {
         // The analytics tool is served locally, not by the MCP server.
         if name == ANALYZE_TOOL_NAME {
             let (ok, out) = self.analyze(args.clone()).await;
@@ -264,7 +290,7 @@ impl Agent {
                 args,
                 if ok { "" } else { &out },
             );
-            return out;
+            return (ok, out);
         }
         if !self.tool_names.contains(name) {
             let msg = format!(
@@ -272,7 +298,7 @@ impl Agent {
                 self.tool_list()
             );
             self.audit(name, "unknown", "error", args, "no such tool");
-            return msg;
+            return (false, msg);
         }
 
         // Classify the SQL in the dialect of the server that owns this tool, so
@@ -292,12 +318,16 @@ impl Agent {
                     args,
                     if ok { "" } else { &text },
                 );
-                text
+                (ok, text)
             }
             Decision::Blocked { reason } => {
                 println!("  ⛔ blocked `{name}`: {reason}");
                 self.audit(name, "blocked", "skipped", args, &reason);
-                format!("Refused: {reason}. Do not retry this statement.")
+                // A policy refusal is not a repairable error: don't invite a retry.
+                (
+                    true,
+                    format!("Refused: {reason}. Do not retry this statement."),
+                )
             }
             Decision::NeedsConfirmation { class, sql } => {
                 println!("\n  ⚠ {} statement requested via `{name}`:", class.label());
@@ -318,7 +348,8 @@ impl Agent {
                                 args,
                                 &format!("confirm failed: {e}"),
                             );
-                            return format!("Confirmation failed: {e}");
+                            // An I/O error reading the console isn't SQL-repairable.
+                            return (true, format!("Confirmation failed: {e}"));
                         }
                     }
                 };
@@ -331,11 +362,14 @@ impl Agent {
                         args,
                         if ok { "" } else { &text },
                     );
-                    text
+                    (ok, text)
                 } else {
                     println!("  ✗ declined by user");
                     self.audit(name, "declined", "skipped", args, "");
-                    "The human declined to run this statement.".to_string()
+                    (
+                        true,
+                        "The human declined to run this statement.".to_string(),
+                    )
                 }
             }
         }
@@ -483,6 +517,24 @@ fn first_line(s: &str) -> &str {
 /// detect a model looping on the same call within a turn.
 fn call_signature(name: &str, args: &Value) -> String {
     format!("{name}:{args}")
+}
+
+/// Guidance appended to a failed tool result to drive the bounded repair loop.
+/// While under the cap, invite a rewrite; once the cap is passed, tell the model
+/// to stop retrying and report the failure instead.
+fn repair_guidance(attempt: u32, max: u32) -> String {
+    if attempt <= max {
+        format!(
+            "\n\n[repair {attempt}/{max}] The statement failed. Fix the SQL and try again — \
+             check table and column names against the schema, and do not resend the same \
+             statement unchanged."
+        )
+    } else {
+        format!(
+            "\n\n[repair] This statement has now failed {max} time(s). Stop retrying; report the \
+             failure to the user with a short explanation of the likely cause."
+        )
+    }
 }
 
 /// Recover tool calls a model emitted as JSON *text* (in the content field)
@@ -656,6 +708,22 @@ mod tests {
     fn unknown_tool_is_ignored() {
         let calls = extract_text_tool_calls(r#"{"name":"rm_rf","arguments":{}}"#, &known());
         assert!(calls.is_empty());
+    }
+
+    #[test]
+    fn repair_guidance_invites_rewrite_under_cap() {
+        let msg = repair_guidance(1, 3);
+        assert!(msg.contains("[repair 1/3]"));
+        assert!(msg.contains("Fix the SQL"));
+        assert!(!msg.contains("Stop retrying"));
+    }
+
+    #[test]
+    fn repair_guidance_stops_past_cap() {
+        let msg = repair_guidance(4, 3);
+        assert!(msg.contains("Stop retrying"));
+        assert!(msg.contains("failed 3 time(s)"));
+        assert!(!msg.contains("[repair 4/3]"));
     }
 
     #[test]

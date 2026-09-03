@@ -23,6 +23,10 @@ pub struct Config {
     /// Cap on tool-call rounds per user turn, to stop runaway loops.
     #[serde(default = "default_max_steps")]
     pub max_steps: usize,
+    /// Cap on how many times a failing statement may be re-derived by the model
+    /// within a single turn (the bounded SQL-repair loop). 0 disables retries.
+    #[serde(default = "default_max_repair_attempts")]
+    pub max_repair_attempts: u32,
     /// Directory of `*.spec.md` semantic-layer / verified-query files.
     #[serde(default = "default_specs_dir")]
     pub specs_dir: String,
@@ -191,6 +195,9 @@ fn default_model() -> String {
 }
 fn default_max_steps() -> usize {
     12
+}
+fn default_max_repair_attempts() -> u32 {
+    3
 }
 fn default_specs_dir() -> String {
     "specs".into()

@@ -461,6 +461,7 @@ async fn run_repl(
         auto_yes,
         audit,
         verify_answers: cfg.verify_answers,
+        max_repair_attempts: cfg.max_repair_attempts,
     };
     let mut agent = Agent::new(
         ollama,
