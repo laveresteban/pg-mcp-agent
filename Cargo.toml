@@ -2,6 +2,7 @@
 name = "pg-mcp-agent"
 version = "0.1.0"
 edition = "2021"
+license = "MIT"
 description = "A Rust agent that drives a Postgres MCP server through a local Ollama model, with guarded writes."
 default-run = "pg-mcp-agent"
 
